@@ -1,0 +1,53 @@
+{
+  "header-cpu": {
+    "type": "header",
+    "description": "CPU"
+  },
+  "cpu-enabled": {
+    "type": "switch",
+    "default": true,
+    "description": "Show CPU chart"
+  },
+  "cpu-color": {
+    "type": "colorchooser",
+    "default": "rgb(98,160,234)",
+    "description": "Color",
+    "dependency": "cpu-enabled"
+  },
+  "header-mem": {
+    "type": "header",
+    "description": "RAM"
+  },
+  "mem-enabled": {
+    "type": "switch",
+    "default": true,
+    "description": "Show RAM chart"
+  },
+  "mem-color": {
+    "type": "colorchooser",
+    "default": "rgb(87,227,137)",
+    "description": "Color",
+    "dependency": "mem-enabled"
+  },
+  "header-net": {
+    "type": "header",
+    "description": "Network"
+  },
+  "net-enabled": {
+    "type": "switch",
+    "default": true,
+    "description": "Show network chart"
+  },
+  "net-up-color": {
+    "type": "colorchooser",
+    "default": "rgb(192,97,203)",
+    "description": "Upload color",
+    "dependency": "net-enabled"
+  },
+  "net-down-color": {
+    "type": "colorchooser",
+    "default": "rgb(255,163,72)",
+    "description": "Download color",
+    "dependency": "net-enabled"
+  }
+}

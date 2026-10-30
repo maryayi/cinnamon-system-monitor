@@ -1,0 +1,7 @@
+{
+  "uuid": "system-monitor@maryayi.github.io",
+  "name": "System Monitor",
+  "description": "Small CPU, RAM and network (upload/download) charts in the panel. Colors and visibility are configurable.",
+  "version": "0.1",
+  "max-instances": 1
+}
