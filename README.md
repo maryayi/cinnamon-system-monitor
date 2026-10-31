@@ -4,7 +4,9 @@ A lightweight [Cinnamon](https://github.com/linuxmint/cinnamon) panel applet
 that draws three small live charts: **CPU**, **RAM**, and **network**
 (upload and download). No dependencies beyond Cinnamon itself.
 
-![System Monitor applet in the panel with its click menu open](assets/screenshot.png)
+<p align="center">
+  <img src="assets/screenshot.png" alt="System Monitor applet in the panel with its click menu open">
+</p>
 
 ## Features
 
