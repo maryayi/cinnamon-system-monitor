@@ -12,6 +12,9 @@ that draws three small live charts: **CPU**, **RAM**, and **network**
   down. Auto-scales to the busiest second on screen (minimum 16 KiB/s).
 - **Tooltip** on hover with exact numbers, e.g.
   `CPU 12%`, `RAM 41% (9.7 GB of 23.8 GB)`, `↑ 3.1 kB/s ↓ 120 kB/s`.
+- **Click menu**: left-click the applet for bigger charts (last 5 minutes, 10 on HiDPI)
+  with details: load average, swap use, and total traffic since boot, plus
+  **Settings** and **About** entries.
 - **Configurable**: pick a color for each chart and turn each one on or off.
 - Updates once per second; each chart shows the last 40 seconds.
 - Follows panel height and HiDPI scaling.

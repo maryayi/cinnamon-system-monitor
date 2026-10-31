@@ -1,4 +1,5 @@
 const Applet = imports.ui.applet;
+const PopupMenu = imports.ui.popupMenu;
 const Settings = imports.ui.settings;
 const Cairo = imports.cairo;
 const Clutter = imports.gi.Clutter;
@@ -9,7 +10,10 @@ const { parseCpu, cpuPercent, parseMem, parseNet, rate } = require('./stats');
 
 const CHART_WIDTH = 40;
 const NET_MIN_SCALE = 16 * 1024;
-const MAX_SAMPLES = 200;
+const POPUP_CHART_WIDTH = 300;
+const POPUP_CHART_HEIGHT = 60;
+// Enough 1-px columns to fill the popup chart at ui_scale 2.
+const MAX_SAMPLES = 600;
 
 function readProc(name) {
     const [, bytes] = GLib.file_get_contents(`/proc/${name}`);
@@ -49,7 +53,7 @@ class SystemMonitorApplet extends Applet.Applet {
         const box = new St.BoxLayout({ style: 'spacing: 2px', y_align: Clutter.ActorAlign.CENTER });
         this.actor.add_child(box);
 
-        const addArea = draw => {
+        const addArea = (parent, draw) => {
             const area = new St.DrawingArea();
             area.connect('repaint', () => {
                 const [w, h] = area.get_surface_size();
@@ -60,18 +64,52 @@ class SystemMonitorApplet extends Applet.Applet {
                 draw(cr, w, h);
                 cr.$dispose();
             });
-            box.add_child(area);
+            parent.add_child(area);
             return area;
         };
         const hist = this._history;
         const netMax = (s, w) => Math.max(NET_MIN_SCALE, ...s.slice(-w));
-        this._cpuArea = addArea((cr, w, h) => drawColumns(cr, w, hist.cpu, 100, this._colors.cpu, h, h, true));
-        this._memArea = addArea((cr, w, h) => drawColumns(cr, w, hist.mem, 100, this._colors.mem, h, h, true));
-        this._netArea = addArea((cr, w, h) => {
+        const drawCpu = (cr, w, h) => drawColumns(cr, w, hist.cpu, 100, this._colors.cpu, h, h, true);
+        const drawMem = (cr, w, h) => drawColumns(cr, w, hist.mem, 100, this._colors.mem, h, h, true);
+        const drawNet = (cr, w, h) => {
             drawColumns(cr, w, hist.tx, netMax(hist.tx, w), this._colors.up, h / 2, h / 2, true);
             drawColumns(cr, w, hist.rx, netMax(hist.rx, w), this._colors.down, h / 2, h / 2, false);
-        });
+        };
+        this._cpuArea = addArea(box, drawCpu);
+        this._memArea = addArea(box, drawMem);
+        this._netArea = addArea(box, drawNet);
         this._areas = [this._cpuArea, this._memArea, this._netArea];
+
+        // Left-click menu: the same charts, bigger, each under a label with details.
+        this.menuManager = new PopupMenu.PopupMenuManager(this);
+        this.menu = new Applet.AppletPopupMenu(this, orientation);
+        this.menuManager.addMenu(this.menu);
+        const scale = global.ui_scale;
+        this._popupAreas = [];
+        const addPopupChart = draw => {
+            const item = new PopupMenu.PopupBaseMenuItem({ reactive: false });
+            const vbox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px' });
+            item.label = new St.Label();
+            vbox.add_child(item.label);
+            const area = addArea(vbox, draw);
+            area.set_size(POPUP_CHART_WIDTH * scale, POPUP_CHART_HEIGHT * scale);
+            this._popupAreas.push(area);
+            item.addActor(vbox);
+            this.menu.addMenuItem(item);
+            return item;
+        };
+        this._cpuItem = addPopupChart(drawCpu);
+        this._memItem = addPopupChart(drawMem);
+        this._netItem = addPopupChart(drawNet);
+        this._separator = new PopupMenu.PopupSeparatorMenuItem();
+        this.menu.addMenuItem(this._separator);
+        const addAction = (text, icon, callback) => {
+            const item = new PopupMenu.PopupIconMenuItem(text, icon, St.IconType.SYMBOLIC);
+            item.connect('activate', callback);
+            this.menu.addMenuItem(item);
+        };
+        addAction('Settings', 'preferences-system-symbolic', () => this.configureApplet());
+        addAction('About', 'help-about-symbolic', () => this.openAbout());
 
         // Shown only when every chart is off, so there is still something to right-click.
         // shortcut: fixed 16 px instead of the panel zone's symbolic icon size; follow getPanelIconSize() if it looks off.
@@ -130,10 +168,13 @@ class SystemMonitorApplet extends Applet.Applet {
             }
 
             const size = n => GLib.format_size(Math.round(n));
-            this.set_applet_tooltip(
-                `CPU ${Math.round(sample.cpu)}%\n` +
-                `RAM ${Math.round(sample.mem)}% (${size((mem.total - mem.available) * 1024)} of ${size(mem.total * 1024)})\n` +
-                `↑ ${size(sample.tx)}/s   ↓ ${size(sample.rx)}/s`);
+            const cpuLine = `CPU ${Math.round(sample.cpu)}%`;
+            const memLine = `RAM ${Math.round(sample.mem)}% (${size((mem.total - mem.available) * 1024)} of ${size(mem.total * 1024)})`;
+            const netLine = `↑ ${size(sample.tx)}/s   ↓ ${size(sample.rx)}/s`;
+            this.set_applet_tooltip(`${cpuLine}\n${memLine}\n${netLine}`);
+            this._cpuItem.label.text = `${cpuLine}\nLoad average ${readProc('loadavg').split(' ', 3).join(' ')}`;
+            this._memItem.label.text = `${memLine}\nSwap ${size((mem.swapTotal - mem.swapFree) * 1024)} of ${size(mem.swapTotal * 1024)}`;
+            this._netItem.label.text = `Network ${netLine}\nTotal ↑ ${size(net.tx)}   ↓ ${size(net.rx)}`;
             this._repaint();
         }
         this._last = { time, cpu, net };
@@ -149,12 +190,17 @@ class SystemMonitorApplet extends Applet.Applet {
         this._cpuArea.visible = this._cpuEnabled;
         this._memArea.visible = this._memEnabled;
         this._netArea.visible = this._netEnabled;
+        this._cpuItem.actor.visible = this._cpuEnabled;
+        this._memItem.actor.visible = this._memEnabled;
+        this._netItem.actor.visible = this._netEnabled;
         this._icon.visible = !(this._cpuEnabled || this._memEnabled || this._netEnabled);
+        this._separator.actor.visible = !this._icon.visible;
         this._repaint();
     }
 
     _repaint() {
-        for (const area of this._areas) {
+        // A hidden DrawingArea only flags itself dirty here and paints when shown.
+        for (const area of [...this._areas, ...this._popupAreas]) {
             if (area.visible)
                 area.queue_repaint();
         }
@@ -166,6 +212,10 @@ class SystemMonitorApplet extends Applet.Applet {
             area.set_size(CHART_WIDTH * scale, panelHeight - 4 * scale);
     }
 
+    on_applet_clicked() {
+        this.menu.toggle();
+    }
+
     on_panel_height_changed() {
         this._resize(this._panelHeight);
     }
@@ -173,6 +223,7 @@ class SystemMonitorApplet extends Applet.Applet {
     on_applet_removed_from_panel() {
         GLib.source_remove(this._timerId);
         this._settings.finalize();
+        this.menu.destroy();
     }
 }
 

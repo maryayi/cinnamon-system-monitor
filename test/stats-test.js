@@ -16,7 +16,9 @@ cpu0 23101 3792 5543 182400 2180 0 410 0 0 0`;
 const MEMINFO = `MemTotal:       23768576 kB
 MemFree:         5123456 kB
 MemAvailable:   15207760 kB
-Buffers:          123456 kB`;
+Buffers:          123456 kB
+SwapTotal:      12000252 kB
+SwapFree:       12000252 kB`;
 
 const NET_DEV = `Inter-|   Receive                                                |  Transmit
  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
@@ -37,6 +39,8 @@ assertEq(cpuPercent(a, a), 0, 'cpu % with Δtotal = 0');
 const mem = parseMem(MEMINFO);
 assertEq(mem.total, 23768576, 'MemTotal');
 assertEq(mem.available, 15207760, 'MemAvailable');
+assertEq(mem.swapTotal, 12000252, 'SwapTotal');
+assertEq(mem.swapFree, 12000252, 'SwapFree');
 assertEq(100 * (mem.total - mem.available) / mem.total, 100 * 8560816 / 23768576, 'ram %');
 
 // Net: lo is left out.

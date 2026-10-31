@@ -17,10 +17,10 @@ function cpuPercent(prev, cur) {
     return 100 * (1 - (cur.idle - prev.idle) / dTotal);
 }
 
-/** /proc/meminfo → { total, available } in kB. */
+/** /proc/meminfo → { total, available, swapTotal, swapFree } in kB. */
 function parseMem(text) {
     const kb = key => Number(text.match(new RegExp(`^${key}:\\s+(\\d+)`, 'm'))[1]);
-    return { total: kb('MemTotal'), available: kb('MemAvailable') };
+    return { total: kb('MemTotal'), available: kb('MemAvailable'), swapTotal: kb('SwapTotal'), swapFree: kb('SwapFree') };
 }
 
 /** /proc/net/dev → { rx, tx } bytes summed over every interface but `lo`. */
