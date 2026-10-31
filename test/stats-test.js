@@ -34,14 +34,15 @@ assertEq(a.total, 374381 + 60719 + 89462 + 2917673 + 35007 + 0 + 2151 + 0, 'cpu 
 assertEq(a.idle, 2917673 + 35007, 'cpu idle includes iowait');
 assertEq(cpuPercent(a, b), 40, 'cpu %');
 assertEq(cpuPercent(a, a), 0, 'cpu % with Δtotal = 0');
+// iowait dropped by 5 during a fully busy second: Δidle = -5, Δtotal = 395 → raw 101 %.
+assertEq(cpuPercent({ total: 1000, idle: 500 }, { total: 1395, idle: 495 }), 100, 'cpu % clamped to 100');
 
 // RAM
 const mem = parseMem(MEMINFO);
 assertEq(mem.total, 23768576, 'MemTotal');
-assertEq(mem.available, 15207760, 'MemAvailable');
+assertEq(mem.used, 23768576 - 15207760, 'used = MemTotal - MemAvailable');
 assertEq(mem.swapTotal, 12000252, 'SwapTotal');
-assertEq(mem.swapFree, 12000252, 'SwapFree');
-assertEq(100 * (mem.total - mem.available) / mem.total, 100 * 8560816 / 23768576, 'ram %');
+assertEq(mem.swapUsed, 0, 'swapUsed = SwapTotal - SwapFree');
 
 // Net: lo is left out.
 const net = parseNet(NET_DEV);

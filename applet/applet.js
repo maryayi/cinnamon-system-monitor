@@ -156,7 +156,7 @@ class SystemMonitorApplet extends Applet.Applet {
             const seconds = (time - this._last.time) / 1e6;
             const sample = {
                 cpu: cpuPercent(this._last.cpu, cpu),
-                mem: 100 * (mem.total - mem.available) / mem.total,
+                mem: 100 * mem.used / mem.total,
                 rx: rate(this._last.net.rx, net.rx, seconds),
                 tx: rate(this._last.net.tx, net.tx, seconds),
             };
@@ -169,11 +169,11 @@ class SystemMonitorApplet extends Applet.Applet {
 
             const size = n => GLib.format_size(Math.round(n));
             const cpuLine = `CPU ${Math.round(sample.cpu)}%`;
-            const memLine = `RAM ${Math.round(sample.mem)}% (${size((mem.total - mem.available) * 1024)} of ${size(mem.total * 1024)})`;
+            const memLine = `RAM ${Math.round(sample.mem)}% (${size(mem.used * 1024)} of ${size(mem.total * 1024)})`;
             const netLine = `↑ ${size(sample.tx)}/s   ↓ ${size(sample.rx)}/s`;
             this.set_applet_tooltip(`${cpuLine}\n${memLine}\n${netLine}`);
             this._cpuItem.label.text = `${cpuLine}\nLoad average ${readProc('loadavg').split(' ', 3).join(' ')}`;
-            this._memItem.label.text = `${memLine}\nSwap ${size((mem.swapTotal - mem.swapFree) * 1024)} of ${size(mem.swapTotal * 1024)}`;
+            this._memItem.label.text = `${memLine}\nSwap ${size(mem.swapUsed * 1024)} of ${size(mem.swapTotal * 1024)}`;
             this._netItem.label.text = `Network ${netLine}\nTotal ↑ ${size(net.tx)}   ↓ ${size(net.rx)}`;
             this._repaint();
         }
@@ -200,10 +200,8 @@ class SystemMonitorApplet extends Applet.Applet {
 
     _repaint() {
         // A hidden DrawingArea only flags itself dirty here and paints when shown.
-        for (const area of [...this._areas, ...this._popupAreas]) {
-            if (area.visible)
-                area.queue_repaint();
-        }
+        for (const area of [...this._areas, ...this._popupAreas])
+            area.queue_repaint();
     }
 
     _resize(panelHeight) {

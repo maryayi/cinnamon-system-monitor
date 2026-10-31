@@ -20,7 +20,7 @@ that draws three small live charts: **CPU**, **RAM**, and **network**
   with details: load average, swap use, and total traffic since boot, plus
   **Settings** and **About** entries.
 - **Configurable**: pick a color for each chart and turn each one on or off.
-- Updates once per second; each chart shows the last 40 seconds.
+- Updates once per second; each chart shows the last 40 seconds (80 on HiDPI).
 - Follows panel height and HiDPI scaling.
 
 ## Requirements
@@ -61,6 +61,9 @@ cp -r applet ~/.local/share/cinnamon/applets/system-monitor@maryayi.github.io
 git pull
 make reload
 ```
+
+If you installed without make, delete the applet folder and run the `cp -r`
+command again before `make reload`.
 
 ### Uninstall
 

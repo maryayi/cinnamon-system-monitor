@@ -14,13 +14,15 @@ function cpuPercent(prev, cur) {
     const dTotal = cur.total - prev.total;
     if (dTotal <= 0)
         return 0;
-    return 100 * (1 - (cur.idle - prev.idle) / dTotal);
+    // The kernel's iowait counter can go down, which can push the raw value past 0..100.
+    return Math.min(100, Math.max(0, 100 * (1 - (cur.idle - prev.idle) / dTotal)));
 }
 
-/** /proc/meminfo → { total, available, swapTotal, swapFree } in kB. */
+/** /proc/meminfo → { total, used, swapTotal, swapUsed } in kB; used = MemTotal − MemAvailable. */
 function parseMem(text) {
     const kb = key => Number(text.match(new RegExp(`^${key}:\\s+(\\d+)`, 'm'))[1]);
-    return { total: kb('MemTotal'), available: kb('MemAvailable'), swapTotal: kb('SwapTotal'), swapFree: kb('SwapFree') };
+    const total = kb('MemTotal'), swapTotal = kb('SwapTotal');
+    return { total, used: total - kb('MemAvailable'), swapTotal, swapUsed: swapTotal - kb('SwapFree') };
 }
 
 /** /proc/net/dev → { rx, tx } bytes summed over every interface but `lo`. */
