@@ -19,6 +19,9 @@ that draws three small live charts: **CPU**, **RAM**, and **network**
 - **Click menu**: left-click the applet for bigger charts (last 5 minutes, 10 on HiDPI)
   with details: load average, swap use, and total traffic since boot, plus
   **Settings** and **About** entries.
+- **Top processes**: hover a chart in the click menu to open a list beside it of the
+  10 processes using the most CPU, memory or bandwidth (name, PID, amount),
+  refreshed every second. Bandwidth covers TCP connections of your own processes only.
 - **Configurable**: pick a color for each chart and turn each one on or off.
 - Updates once per second; each chart shows the last 40 seconds (80 on HiDPI).
 - Follows panel height and HiDPI scaling.

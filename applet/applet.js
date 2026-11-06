@@ -1,12 +1,14 @@
 const Applet = imports.ui.applet;
+const Main = imports.ui.main;
 const PopupMenu = imports.ui.popupMenu;
 const Settings = imports.ui.settings;
 const Cairo = imports.cairo;
 const Clutter = imports.gi.Clutter;
 const GLib = imports.gi.GLib;
 const St = imports.gi.St;
+const Util = imports.misc.util;
 
-const { parseCpu, cpuPercent, parseMem, parseNet, rate } = require('./stats');
+const { parseCpu, cpuPercent, parseMem, parseNet, rate, parseProcStats, parsePs, parseSs, growthByPid } = require('./stats');
 
 const CHART_WIDTH = 40;
 const NET_MIN_SCALE = 16 * 1024;
@@ -14,10 +16,18 @@ const POPUP_CHART_WIDTH = 300;
 const POPUP_CHART_HEIGHT = 60;
 // Enough 1-px columns to fill the popup chart at ui_scale 2.
 const MAX_SAMPLES = 600;
+const DETAILS_ROWS = 10;
 
 function readProc(name) {
     const [, bytes] = GLib.file_get_contents(`/proc/${name}`);
     return new TextDecoder().decode(bytes);
+}
+
+const size = n => GLib.format_size(Math.round(n));
+
+// One monospace row of a details menu; comm names are at most 15 chars, except some kernel threads.
+function detailsLine(name, pid, ...values) {
+    return [name.slice(0, 15).padEnd(15), String(pid).padStart(7), ...values.map(v => v.padStart(12))].join(' ');
 }
 
 function parseColor(str) {
@@ -87,7 +97,8 @@ class SystemMonitorApplet extends Applet.Applet {
         const scale = global.ui_scale;
         this._popupAreas = [];
         const addPopupChart = draw => {
-            const item = new PopupMenu.PopupBaseMenuItem({ reactive: false });
+            // Reactive so hovering it opens its details menu; activate: false keeps clicks from closing the menu.
+            const item = new PopupMenu.PopupBaseMenuItem({ activate: false });
             const vbox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px' });
             item.label = new St.Label();
             vbox.add_child(item.label);
@@ -101,6 +112,46 @@ class SystemMonitorApplet extends Applet.Applet {
         this._cpuItem = addPopupChart(drawCpu);
         this._memItem = addPopupChart(drawMem);
         this._netItem = addPopupChart(drawNet);
+
+        // Hovering a popup chart opens a menu beside it with the top processes, refreshed every tick.
+        // It is not given to menuManager, so it stays display-only and closing this.menu closes it too.
+        const addDetails = (item, command, header, render) => {
+            const menu = new PopupMenu.PopupMenu(this.menu.actor, St.Side.LEFT);
+            Main.uiGroup.add_actor(menu.actor);
+            menu.actor.hide();
+            const label = new St.Label({ style: 'font-family: monospace' });
+            const row = new PopupMenu.PopupBaseMenuItem({ reactive: false });
+            row.addActor(label);
+            menu.addMenuItem(row);
+            item.details = { menu, label, command, header, render };
+        };
+        // render(stdout, details) → [[score, name, pid, ...values]], or null while it only stored a baseline.
+        addDetails(this._cpuItem, 'cat /proc/stat /proc/[0-9]*/stat', detailsLine('Process', 'PID', 'CPU'), (out, d) => {
+            const cur = parseProcStats(out), prev = d.prev;
+            d.prev = cur;
+            // Share of all cores, like the CPU chart, so the rows add up to its value.
+            return prev && growthByPid(prev.procs, cur.procs, ['ticks'])
+                .map(p => [p.ticks, p.name, p.pid, `${(100 * p.ticks / (cur.total - prev.total)).toFixed(1)}%`]);
+        });
+        addDetails(this._memItem, 'ps -eo pid=,rss=,comm=', detailsLine('Process', 'PID', 'Memory'),
+            out => parsePs(out).map(p => [p.rss, p.name, p.pid, size(p.rss * 1024)]));
+        // shortcut: ss only sees TCP sockets of the user's own processes (no UDP/QUIC, no root daemons, no other netns); per-process totals need root (eBPF or pcap, like nethogs).
+        addDetails(this._netItem, 'ss -tinpH', `TCP of your own processes only\n${detailsLine('Process', 'PID', '↑ Upload', '↓ Download')}`, (out, d) => {
+            const cur = { time: GLib.get_monotonic_time(), sockets: parseSs(out) }, prev = d.prev;
+            d.prev = cur;
+            const seconds = prev && (cur.time - prev.time) / 1e6;
+            return prev && growthByPid(prev.sockets, cur.sockets, ['tx', 'rx'])
+                .map(p => [p.tx + p.rx, p.name, p.pid, `${size(p.tx / seconds)}/s`, `${size(p.rx / seconds)}/s`]);
+        });
+        this.menu.connect('active-changed', (menu, item) => {
+            // null means the pointer left the item, maybe into its details menu, so keep that open.
+            if (item)
+                this._showDetails(item);
+        });
+        this.menu.connect('open-state-changed', (menu, open) => {
+            if (!open)
+                this._showDetails(null);
+        });
         this._separator = new PopupMenu.PopupSeparatorMenuItem();
         this.menu.addMenuItem(this._separator);
         const addAction = (text, icon, callback) => {
@@ -167,7 +218,6 @@ class SystemMonitorApplet extends Applet.Applet {
                     series.shift();
             }
 
-            const size = n => GLib.format_size(Math.round(n));
             const cpuLine = `CPU ${Math.round(sample.cpu)}%`;
             const memLine = `RAM ${Math.round(sample.mem)}% (${size(mem.used * 1024)} of ${size(mem.total * 1024)})`;
             const netLine = `↑ ${size(sample.tx)}/s   ↓ ${size(sample.rx)}/s`;
@@ -178,6 +228,38 @@ class SystemMonitorApplet extends Applet.Applet {
             this._repaint();
         }
         this._last = { time, cpu, net };
+        this._updateDetails();
+    }
+
+    // Opens the details menu of the hovered popup chart; hovering any other item closes it.
+    _showDetails(item) {
+        const details = item?.details;
+        if (details === this._details)
+            return;
+        this._details?.menu.close();
+        this._details = details;
+        if (!details)
+            return;
+        details.prev = null;
+        details.label.text = `${details.header}\n…`;
+        details.menu.shiftToPosition(item.actor.get_transformed_position()[1]);
+        details.menu.open();
+        this._updateDetails();
+    }
+
+    // Runs the open details menu's command off the main thread; ss alone takes ~80 ms.
+    _updateDetails() {
+        const details = this._details;
+        if (!details || details.pending)
+            return;
+        details.pending = true;
+        Util.spawnCommandLineAsyncIO(details.command, out => {
+            details.pending = false;
+            const rows = details.render(out, details);
+            const lines = rows ? rows.filter(r => r[0] > 0).sort((a, b) => b[0] - a[0]).slice(0, DETAILS_ROWS)
+                .map(([, ...cells]) => detailsLine(...cells)) : ['…'];
+            details.label.text = [details.header, ...(lines.length ? lines : ['(none)'])].join('\n');
+        });
     }
 
     _applySettings() {
@@ -222,6 +304,8 @@ class SystemMonitorApplet extends Applet.Applet {
         GLib.source_remove(this._timerId);
         this._settings.finalize();
         this.menu.destroy();
+        for (const item of [this._cpuItem, this._memItem, this._netItem])
+            item.details.menu.destroy();
     }
 }
 
